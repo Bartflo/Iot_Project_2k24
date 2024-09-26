@@ -7,4 +7,13 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Devices.Client" Version="1.42.3" />
+    <PackageReference Include="Opc.UaFx.Client" Version="2.42.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IoT_project.Device\IoT_project.Device.csproj" />
+  </ItemGroup>
+
 </Project>
