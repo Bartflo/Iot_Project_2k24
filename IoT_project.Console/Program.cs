@@ -1,6 +1,8 @@
 ﻿using IoT_project.Device;
 using Microsoft.Azure.Devices.Client;
 using Newtonsoft.Json;
+using Opc.UaFx;
+using Opc.UaFx.Client;
 
 internal class Program
 {
@@ -11,6 +13,7 @@ internal class Program
         string configFileJsonPath = Path.Combine(Directory.GetParent(AppContext.BaseDirectory).Parent.Parent.Parent.FullName, "config.json");
 
         string deviceConnectionString = "";
+        string OPCserverURL = "";
         List<string> devicesNames = new List<string>();
 
         // Reading JSON configuration file
@@ -28,17 +31,13 @@ internal class Program
                 Console.WriteLine("Error: 'deviceConnectionString' not found in the configuration file.");
                 return; 
             }
-
-            if (configObject.devices != null)
+            if(configObject.OPCserverURL != null)
             {
-                foreach (var deviceName in configObject.devices)
-                {
-                    devicesNames.Add(deviceName.ToString());
-                }
+                OPCserverURL = configObject.OPCserverURL.ToString();
             }
             else
             {
-                Console.WriteLine("Error: 'devices' not found in the configuration file.");
+                Console.WriteLine("Error: 'OPCserverURL' not found in the configuration file.");
                 return;
             }
 
@@ -55,18 +54,67 @@ internal class Program
             Console.WriteLine("Device connection string is empty. Exiting...");
             return;
         }
-
-        if (devicesNames.Count == 0)
-        {
-            Console.WriteLine("Devices list is empty. Exiting...");
-            return;
-        }
-
         // Start the connection
         using var deviceClient = DeviceClient.CreateFromConnectionString(deviceConnectionString, TransportType.Mqtt);
         await deviceClient.OpenAsync();
-        var device = new VirtualDevice(deviceClient);
-        Console.WriteLine("Connection success");
+        Console.WriteLine("Connection to Azure success");
+
+        using(var client = new OpcClient(OPCserverURL))
+        {
+            client.Connect();
+            Console.WriteLine("Connection to OPC UA success");
+            devicesNames = client.BrowseNode(OpcObjectTypes.ObjectsFolder)
+                .Children()
+                .Where(node => node.DisplayName.Value.Contains("Device"))
+                .Select(node => node.DisplayName.Value)
+                .ToList();
+
+            var device = new VirtualDevice(deviceClient, client);
+            while (devicesNames.Count > 0)
+            {
+                Console.WriteLine("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                foreach (string deviceName in devicesNames)
+                {
+                    string baseNode = $"ns=2;s={deviceName}/";
+                    var nodeNames = new[]
+                    {
+                        "ProductionStatus",
+                        "ProductionRate",
+                        "WorkorderId",
+                        "Temperature",
+                        "GoodCount",
+                        "BadCount",
+                        "DeviceError"
+                    };
+
+                    //list to store OpcValue for each node
+                    List<OpcValue> nodeValues = new List<OpcValue>();
+                    foreach (var nodeName in nodeNames)
+                    {
+                        OpcValue value = client.ReadNode(baseNode + nodeName);
+                        nodeValues.Add(value);
+                    }
+
+                    var data = new
+                    {
+                        Name = deviceName,
+                        ProductionStatus = nodeValues[0].Value,
+                        ProductionRate = nodeValues[1].Value,
+                        WorkorderID = nodeValues[2].Value,
+                        Temperature = nodeValues[3].Value,
+                        GoodCount = nodeValues[4].Value,
+                        BadCount = nodeValues[5].Value,
+                        DeviceError = nodeValues[6].Value,
+                    };
+                    Console.WriteLine(data);
+                    Console.WriteLine("\t");
+                    await device.SendTelemetry(data);
+
+                }
+                await Task.Delay(12500); 
+            }
+            client.Disconnect();
+        }
         Console.ReadLine();
     }
 }
