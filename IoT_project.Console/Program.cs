@@ -70,6 +70,7 @@ internal class Program
                 .ToList();
 
             var device = new VirtualDevice(deviceClient, client);
+            await device.InitializeHandlers();
             //await device.ClearReportedTwinAsync();
             while (devicesNames.Count > 0)
             {

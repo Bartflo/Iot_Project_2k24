@@ -156,9 +156,33 @@ namespace IoT_project.Device
         }
 
         #endregion
-
+        #region Direct Methods
+        private static async Task<MethodResponse> DefaultServiceHandler(MethodRequest methodRequest, object userContext)
+        {
+            Console.WriteLine($"\tMETHOD EXECUTED: {methodRequest.Name}");
+            await Task.Delay(1000);
+            return new MethodResponse(0);
+        }
+        private async Task<MethodResponse> EmergencyStop(MethodRequest methodRequest, object userContext)
+        {
+            var payload = JsonConvert.DeserializeAnonymousType(methodRequest.DataAsJson, new { deviceName = default(string) });
+            Console.WriteLine($"\t Emergency stop executed for: {payload.deviceName}");
+            OPC.CallMethod($"ns=2;s={payload.deviceName}",$"ns=2;s={payload.deviceName}/EmergencyStop");
+            return new MethodResponse(0);
+        }
+        private async Task<MethodResponse> ResetErrorStatus(MethodRequest methodRequest, object userContext)
+        {
+            var payload = JsonConvert.DeserializeAnonymousType(methodRequest.DataAsJson, new { deviceName = default(string) });
+            Console.WriteLine($"\t Reset error status executed for: {payload.deviceName}");
+            OPC.CallMethod($"ns=2;s={payload.deviceName}", $"ns=2;s={payload.deviceName}/ResetErrorStatus");
+            return new MethodResponse(0);
+        }
+        #endregion
         public async Task InitializeHandlers()
         {
+            await client.SetMethodHandlerAsync("EmergencyStop", EmergencyStop, client);
+            await client.SetMethodHandlerAsync("ResetErrorStatus",ResetErrorStatus, client);
+            await client.SetMethodDefaultHandlerAsync(DefaultServiceHandler, client);
         }
     }
     public class TelemetryData
