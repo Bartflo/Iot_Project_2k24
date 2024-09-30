@@ -70,6 +70,7 @@ internal class Program
                 .ToList();
 
             var device = new VirtualDevice(deviceClient, client);
+            //await device.ClearReportedTwinAsync();
             while (devicesNames.Count > 0)
             {
                 Console.WriteLine("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
@@ -87,7 +88,6 @@ internal class Program
                         "DeviceError"
                     };
 
-                    //list to store OpcValue for each node
                     List<OpcValue> nodeValues = new List<OpcValue>();
                     foreach (var nodeName in nodeNames)
                     {
@@ -95,20 +95,19 @@ internal class Program
                         nodeValues.Add(value);
                     }
 
-                    var data = new
+                    var telemetryData = new TelemetryData
                     {
-                        Name = deviceName,
+                        DeviceName = deviceName,
                         ProductionStatus = nodeValues[0].Value,
                         ProductionRate = nodeValues[1].Value,
-                        WorkorderID = nodeValues[2].Value,
+                        WorkorderId = nodeValues[2].Value,
                         Temperature = nodeValues[3].Value,
                         GoodCount = nodeValues[4].Value,
                         BadCount = nodeValues[5].Value,
-                        DeviceError = nodeValues[6].Value,
+                        DeviceErrors = nodeValues[6].Value
                     };
-                    Console.WriteLine(data);
-                    Console.WriteLine("\t");
-                    await device.SendTelemetry(data);
+
+                    await device.SendTelemetry(telemetryData);
 
                 }
                 await Task.Delay(12500); 
