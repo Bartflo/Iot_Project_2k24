@@ -1,4 +1,6 @@
-﻿using IoT_project.Device;
+﻿using Azure.Messaging.ServiceBus;
+using IoT_project.Device;
+using Microsoft.Azure.Devices;
 using Microsoft.Azure.Devices.Client;
 using Newtonsoft.Json;
 using Opc.UaFx;
@@ -14,6 +16,11 @@ internal class Program
 
         string deviceConnectionString = "";
         string OPCserverURL = "";
+        string serviceBusConnectionString = "";
+        string registryManagerConnectionString = "";
+        string emergencyStopQueue = "";
+        string decreaseProductionRateQueue = "";
+        string azureDeviceName = "";
         List<string> devicesNames = new List<string>();
 
         // Reading JSON configuration file
@@ -25,8 +32,7 @@ internal class Program
             if (configObject.deviceConnectionString != null)
             {
                 deviceConnectionString = configObject.deviceConnectionString.ToString();
-            }
-            else
+            }else
             {
                 Console.WriteLine("Error: 'deviceConnectionString' not found in the configuration file.");
                 return; 
@@ -34,10 +40,49 @@ internal class Program
             if(configObject.OPCserverURL != null)
             {
                 OPCserverURL = configObject.OPCserverURL.ToString();
-            }
-            else
+            }else
             {
                 Console.WriteLine("Error: 'OPCserverURL' not found in the configuration file.");
+                return;
+            }
+            if (configObject.serviceBusConnectionString != null)
+            {
+                serviceBusConnectionString = configObject.serviceBusConnectionString.ToString();
+            }else
+            {
+                Console.WriteLine("Error: 'serviceBusConnectionString' not found in the configuration file.");
+                return;
+            }
+            if (configObject.registryManagerConnectionString != null)
+            {
+                registryManagerConnectionString = configObject.registryManagerConnectionString.ToString();
+            }else
+            {
+                Console.WriteLine("Error: 'registryManagerConnectionString' not found in the configuration file.");
+                return;
+            }
+            if (configObject.emergencyStopQueue != null)
+            {
+                emergencyStopQueue = configObject.emergencyStopQueue.ToString();
+            }else
+            {
+                Console.WriteLine("Error: 'emergencyStopQueue' not found in the configuration file.");
+                return;
+            }
+            if(configObject.decreaseProductionRateQueue != null)
+            {
+                decreaseProductionRateQueue = configObject.decreaseProductionRateQueue.ToString();
+            }else
+            {
+                Console.WriteLine("Error: 'decreaseProductionRateQueue' not found in the configuration file.");
+                return;
+            }
+            if(configObject.azureDeviceName != null)
+            {
+                azureDeviceName = configObject.azureDeviceName.ToString();
+            }else
+            {
+                Console.WriteLine("Error: 'azureDeviceName' not found in the configuration file.");
                 return;
             }
 
@@ -55,7 +100,7 @@ internal class Program
             return;
         }
         // Start the connection
-        using var deviceClient = DeviceClient.CreateFromConnectionString(deviceConnectionString, TransportType.Mqtt);
+        using var deviceClient = DeviceClient.CreateFromConnectionString(deviceConnectionString, Microsoft.Azure.Devices.Client.TransportType.Mqtt);
         await deviceClient.OpenAsync();
         Console.WriteLine("Connection to Azure success");
 
@@ -69,9 +114,20 @@ internal class Program
                 .Select(node => node.DisplayName.Value)
                 .ToList();
 
-            var device = new VirtualDevice(deviceClient, client);
+            using var registryManager = RegistryManager.CreateFromConnectionString(registryManagerConnectionString);
+            var device = new VirtualDevice(deviceClient, client, registryManager);
             await device.InitializeHandlers();
             //await device.ClearReportedTwinAsync();
+            
+            await using ServiceBusClient serviceBus_client = new ServiceBusClient(serviceBusConnectionString);
+            await using ServiceBusProcessor emergencyStopQueue_processor = serviceBus_client.CreateProcessor(emergencyStopQueue);
+            //await using ServiceBusProcessor decreaseProductionRateQueue_processor = serviceBus_client.CreateProcessor(decreaseProductionRateQueue);
+
+            emergencyStopQueue_processor.ProcessMessageAsync += device.EmergencyStop_ProcessMessageAsync;
+            emergencyStopQueue_processor.ProcessErrorAsync += device.Message_ProcessorError;
+
+            await emergencyStopQueue_processor.StartProcessingAsync();
+            //await decreaseProductionRateQueue_processor.StartProcessingAsync();
             while (devicesNames.Count > 0)
             {
                 Console.WriteLine("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");

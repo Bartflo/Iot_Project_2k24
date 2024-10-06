@@ -1,12 +1,16 @@
-﻿using Microsoft.Azure.Devices.Client;
+﻿using Azure.Messaging.ServiceBus;
+using Microsoft.Azure.Devices;
+using Microsoft.Azure.Devices.Client;
 using Microsoft.Azure.Devices.Client.Exceptions;
 using Microsoft.Azure.Devices.Shared;
 using Newtonsoft.Json;
+using Opc.Ua;
 using Opc.UaFx;
 using Opc.UaFx.Client;
 using System.Diagnostics;
 using System.Net.Mime;
 using System.Text;
+using Message = Microsoft.Azure.Devices.Client.Message;
 
 namespace IoT_project.Device
 {
@@ -14,11 +18,13 @@ namespace IoT_project.Device
     {
         private readonly DeviceClient client;
         private OpcClient OPC;
+        private RegistryManager registryManager;
 
-        public VirtualDevice(DeviceClient deviceClient, OpcClient OPC)
+        public VirtualDevice(DeviceClient deviceClient, OpcClient OPC, RegistryManager registryManager)
         {
             this.client = deviceClient;
             this.OPC = OPC;
+            this.registryManager = registryManager;
         }
 
         #region D2C telemetry
@@ -71,7 +77,7 @@ namespace IoT_project.Device
 
             await client.SendEventAsync(eventMessage);
 
-            await UpdateTwinAsync(nameDevice, errorStatus, telemetryData.ProductionRate);
+            await UpdateTwinAsync(telemetryData.DeviceName, errorStatus, telemetryData.ProductionRate);
         }
 
         #endregion
@@ -104,7 +110,7 @@ namespace IoT_project.Device
         {
             var twin = await client.GetTwinAsync();
             var reportedProp = twin.Properties.Reported;
-
+            var desiredProp = twin.Properties.Desired;
             var name = deviceName.Replace(" ", "");
             var device_error = $"{name}_error_code";
             var device_production = $"{name}_production_rate";
@@ -127,8 +133,8 @@ namespace IoT_project.Device
 
             if (reportedProp.Contains(device_production))
             {
-                var productionInTgisMoment = reportedProp[device_production]?.ToString();
-                if (productionInTgisMoment != device_production_rate)
+                var currentProductionRate = reportedProp[device_production]?.ToString();
+                if (currentProductionRate != device_production_rate)
                 {
                     await UpdateReportedProperty(device_production, device_production_rate);
                 }
@@ -136,6 +142,18 @@ namespace IoT_project.Device
             else
             {
                 await UpdateReportedProperty(device_production, device_production_rate);
+            }
+
+            var device_production_desired = $"{name}_production_rate";
+            if(desiredProp.Contains(device_production_desired))
+            {
+                var desiredProductionRate = desiredProp[device_production_desired]?.ToString();
+                if (desiredProductionRate != null && desiredProductionRate != device_production_rate)
+                {
+                    int int_desiredProductionRate;
+                    int.TryParse(desiredProductionRate, out int_desiredProductionRate);
+                    OPC.WriteNode($"ns=2;s={deviceName}/ProductionRate", int_desiredProductionRate);
+                }
             }
         }
 
@@ -177,6 +195,28 @@ namespace IoT_project.Device
             OPC.CallMethod($"ns=2;s={payload.deviceName}", $"ns=2;s={payload.deviceName}/ResetErrorStatus");
             return new MethodResponse(0);
         }
+        #endregion
+        #region Business logic
+        public async Task EmergencyStop_ProcessMessageAsync(ProcessMessageEventArgs arg)
+        {
+            string messageBody = Encoding.UTF8.GetString(arg.Message.Body.ToArray());
+            var messageContent = JsonConvert.DeserializeObject<dynamic>(messageBody);
+            string deviceName = messageContent.deviceName;
+
+            string payload = "{\"deviceName\":\"" + deviceName + "\"}";
+            byte[] byte_payload = Encoding.ASCII.GetBytes(payload);
+            MethodRequest methodRequest = new MethodRequest(JsonConvert.SerializeObject(payload), byte_payload);
+
+            await EmergencyStop(methodRequest, client);
+            await arg.CompleteMessageAsync(arg.Message);
+        }
+
+        public Task Message_ProcessorError(ProcessErrorEventArgs arg)
+        {
+            Console.WriteLine($"Service bus error: {arg.Exception.Message}");
+            return Task.CompletedTask;
+        }
+
         #endregion
         public async Task InitializeHandlers()
         {
