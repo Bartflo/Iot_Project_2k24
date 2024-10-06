@@ -115,19 +115,22 @@ internal class Program
                 .ToList();
 
             using var registryManager = RegistryManager.CreateFromConnectionString(registryManagerConnectionString);
-            var device = new VirtualDevice(deviceClient, client, registryManager);
+            var device = new VirtualDevice(deviceClient, client, registryManager, azureDeviceName);
             await device.InitializeHandlers();
             //await device.ClearReportedTwinAsync();
             
             await using ServiceBusClient serviceBus_client = new ServiceBusClient(serviceBusConnectionString);
             await using ServiceBusProcessor emergencyStopQueue_processor = serviceBus_client.CreateProcessor(emergencyStopQueue);
-            //await using ServiceBusProcessor decreaseProductionRateQueue_processor = serviceBus_client.CreateProcessor(decreaseProductionRateQueue);
+            await using ServiceBusProcessor decreaseProductionRateQueue_processor = serviceBus_client.CreateProcessor(decreaseProductionRateQueue);
 
             emergencyStopQueue_processor.ProcessMessageAsync += device.EmergencyStop_ProcessMessageAsync;
             emergencyStopQueue_processor.ProcessErrorAsync += device.Message_ProcessorError;
 
+            decreaseProductionRateQueue_processor.ProcessMessageAsync += device.DecreaseProductionRate_ProcessMessageAsync;
+            decreaseProductionRateQueue_processor.ProcessErrorAsync += device.Message_ProcessorError;
+
             await emergencyStopQueue_processor.StartProcessingAsync();
-            //await decreaseProductionRateQueue_processor.StartProcessingAsync();
+            await decreaseProductionRateQueue_processor.StartProcessingAsync();
             while (devicesNames.Count > 0)
             {
                 Console.WriteLine("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
@@ -167,7 +170,7 @@ internal class Program
                     await device.SendTelemetry(telemetryData);
 
                 }
-                await Task.Delay(12500); 
+                await Task.Delay(10000); 
             }
             client.Disconnect();
         }

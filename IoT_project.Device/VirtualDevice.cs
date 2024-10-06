@@ -19,12 +19,14 @@ namespace IoT_project.Device
         private readonly DeviceClient client;
         private OpcClient OPC;
         private RegistryManager registryManager;
+        private string azureDeviceName;
 
-        public VirtualDevice(DeviceClient deviceClient, OpcClient OPC, RegistryManager registryManager)
+        public VirtualDevice(DeviceClient deviceClient, OpcClient OPC, RegistryManager registryManager, string azureDeviceName)
         {
             this.client = deviceClient;
             this.OPC = OPC;
             this.registryManager = registryManager;
+            this.azureDeviceName = azureDeviceName;
         }
 
         #region D2C telemetry
@@ -210,6 +212,36 @@ namespace IoT_project.Device
             await EmergencyStop(methodRequest, client);
             await arg.CompleteMessageAsync(arg.Message);
         }
+        public async Task DecreaseProductionRate_ProcessMessageAsync(ProcessMessageEventArgs arg)
+        {
+            string messageBody = Encoding.UTF8.GetString(arg.Message.Body.ToArray());
+            var messageContent = JsonConvert.DeserializeObject<dynamic>(messageBody);
+            string deviceName = messageContent.deviceName;
+            string deviceProperty = $"{deviceName.Replace(" ", "")}_production_rate";
+
+            var twin = await registryManager.GetTwinAsync(azureDeviceName);
+            var reportedProp = twin.Properties.Reported;
+            var desiredProp = twin.Properties.Desired;
+
+            Console.WriteLine("decrease");
+
+            if (desiredProp.Contains(deviceProperty) && reportedProp.Contains(deviceProperty))
+            {
+                if (int.TryParse((string)reportedProp[deviceProperty], out int currentRate))
+                {
+                    int newRate = Math.Max(currentRate - 10, 0);
+
+                    if (currentRate != newRate)
+                    {
+                        desiredProp[deviceProperty] = newRate;
+                        await registryManager.UpdateTwinAsync(twin.DeviceId, twin, twin.ETag);
+                        Console.WriteLine($"Production Rate decreased for: {deviceName} by 10%");
+                    }
+                }
+            }
+            await arg.CompleteMessageAsync(arg.Message);
+        }
+
 
         public Task Message_ProcessorError(ProcessErrorEventArgs arg)
         {
