@@ -223,9 +223,8 @@ namespace IoT_project.Device
             var reportedProp = twin.Properties.Reported;
             var desiredProp = twin.Properties.Desired;
 
-            Console.WriteLine("decrease");
 
-            if (desiredProp.Contains(deviceProperty) && reportedProp.Contains(deviceProperty))
+            if (reportedProp.Contains(deviceProperty))
             {
                 if (int.TryParse((string)reportedProp[deviceProperty], out int currentRate))
                 {

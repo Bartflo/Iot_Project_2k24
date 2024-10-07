@@ -1,0 +1,59 @@
+/* Data Calculations */
+/* Temperature */
+SELECT
+    DeviceName, 
+    System.Timestamp() AS SnapshotDateTime, 
+    MIN(Temperature) AS MinTemperature, 
+    MAX(Temperature) AS MaxTemperature, 
+    AVG(Temperature) AS AvgTemperature 
+INTO
+    [temperature]
+FROM
+    [IoT2023-Bart]
+TIMESTAMP BY EventEnqueuedUtcTime
+GROUP BY DeviceName, HoppingWindow(minute,5,1); 
+
+/* Production KPIs */
+SELECT
+    DeviceName,
+    System.Timestamp() AS SnapshotDateTime,
+    ROUND((SUM(GoodCount) * 100.0) / (SUM(GoodCount) + SUM(BadCount)), 2) AS KPI
+ INTO
+    [production-kpi]
+ FROM
+    [IoT2023-Bart]
+TIMESTAMP BY EventEnqueuedUtcTime
+GROUP BY  DeviceName, TumblingWindow(minute, 5);
+
+/* device errors */
+SELECT
+    DeviceName,
+    System.Timestamp() AS SnapshotDateTime,
+    COUNT(*) AS ErrorCount
+ INTO
+    [device-errors]
+ FROM
+    [IoT2023-Bart]
+TIMESTAMP BY EventEnqueuedUtcTime
+WHERE DeviceErrors IS NOT NULL AND DeviceErrors != 0
+GROUP BY  DeviceName, SlidingWindow(second,60)
+HAVING COUNT(DeviceErrors) > 3;
+
+/* Business Logic - emergency stop */
+SELECT deviceName , COUNT(deviceErrors) 
+INTO [device-errors-bus]
+FROM [IoT2023-Bart] TIMESTAMP BY EventEnqueuedUtcTime
+WHERE deviceErrors IS NOT NULL AND deviceErrors != 0
+GROUP BY deviceName, SlidingWindow(second,60)
+HAVING COUNT(deviceErrors) > 3
+
+/* Business Logic - Decrease production rate */
+SELECT
+    deviceName,
+    ROUND((SUM(GoodCount) * 100.0) / (SUM(GoodCount) + SUM(BadCount)), 2) AS KPI
+INTO 
+    [production-kpi-bus]
+FROM
+    [IoT2023-Bart] TIMESTAMP BY EventEnqueuedUtcTime
+GROUP BY deviceName, TumblingWindow(minute, 5)
+HAVING KPI < 90

@@ -12,7 +12,7 @@ internal class Program
     {
         Console.WriteLine("Started");
         // Path to configuration file
-        string configFileJsonPath = Path.Combine(Directory.GetParent(AppContext.BaseDirectory).Parent.Parent.Parent.FullName, "config.json");
+        string configFileJsonPath = Path.Combine(AppContext.BaseDirectory, "config.json");
 
         string deviceConnectionString = "";
         string OPCserverURL = "";
@@ -118,7 +118,7 @@ internal class Program
             var device = new VirtualDevice(deviceClient, client, registryManager, azureDeviceName);
             await device.InitializeHandlers();
             //await device.ClearReportedTwinAsync();
-            
+
             await using ServiceBusClient serviceBus_client = new ServiceBusClient(serviceBusConnectionString);
             await using ServiceBusProcessor emergencyStopQueue_processor = serviceBus_client.CreateProcessor(emergencyStopQueue);
             await using ServiceBusProcessor decreaseProductionRateQueue_processor = serviceBus_client.CreateProcessor(decreaseProductionRateQueue);
